@@ -1,0 +1,317 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+#
+# Uses kstat command to dig up statistics.
+# Pull requests are more than welcome.
+#
+# Juho Juopperi <jkj@kapsi.fi>
+#
+
+import atexit
+import curses
+import locale
+import random
+import subprocess
+import sys
+import time
+
+class Dataset(object):
+    '''
+    One ZFS file system's stats at one point of time
+    '''
+    
+    dataset = ''
+    dev = ''
+    nread = 0.0
+    nwrite = 0.0
+    read_bytes = 0.0
+    write_bytes = 0.0
+    snaptime = 0.0
+    
+    def __init__(self, name, dev):
+        self.dataset = name
+        self.dev = dev
+    
+    def __sub__(self, b):
+        a = self
+        delta = Dataset(a.dataset, a.dev)
+        
+        delta.nread = float(a.nread) - float(b.nread)
+        delta.nwrite = float(a.nwrite) - float(b.nwrite)
+        delta.read_bytes = float(a.read_bytes) - float(b.read_bytes)
+        delta.write_bytes = float(a.write_bytes) - float(b.write_bytes)
+        delta.snaptime = float(a.snaptime) - float(b.snaptime)
+        
+        return delta
+        
+def deltify(oldstats, stats, devmap):
+    '''
+    Make a dataset object that contains the delta statistics
+    between two given datasets.
+    '''
+
+    datasets = list()
+
+    for dev in devmap:
+        dsname = devmap[dev]
+        ds1 = oldstats[dsname]
+        ds2 = stats[dsname]
+
+        ds = Dataset(ds1.dataset, ds1.dev)
+        ds.snaptime = float(ds2.snaptime) - float(ds1.snaptime)
+        ds.nread = (float(ds2.nread) - float(ds1.nread)) / ds.snaptime
+        ds.nwrite = (float(ds2.nwrite) - float(ds1.nwrite)) / ds.snaptime
+        ds.read_bytes = (float(ds2.read_bytes) - float(ds1.read_bytes)) / ds.snaptime
+        ds.write_bytes = (float(ds2.write_bytes) - float(ds1.write_bytes)) / ds.snaptime
+        datasets.append(ds)
+
+    return datasets
+
+class DataProducer(object):
+    '''
+    Extracts the statistics from kernel
+    '''
+    
+    def __init__(self):
+        self.devmap = self.get_devmap()
+        self.stats = self.update()
+        
+    def update(self):
+        '''
+        Fetch per zfs dataset statistics with kstat
+        '''
+    
+        # name -> object
+        datasets = dict()
+    
+        env = { 'LANG': 'C' }
+        p = subprocess.Popen(['kstat', '-p', 'unix:*:vopstats_???????'], stdout=subprocess.PIPE, env=env)
+        res = p.communicate()
+    
+        if p.returncode > 0:
+            raise Exception('Could not call kstat')
+    
+        lines = res[0].split('\n')
+        lines.remove('')
+        for line in lines:
+            (path, value) = line.split('\t')
+            (module, instance, name, stat) = path.split(':')
+            dev = name.split('_')[1]
+            
+            if not dev in self.devmap:
+                continue
+    
+            dsname = self.devmap[dev]
+    
+            if not dsname in datasets:
+                ds = Dataset(dsname, dev)
+                datasets[dsname] = ds
+    
+            ds = datasets[dsname]
+            setattr(ds, stat, value)
+    
+        return datasets
+        
+    def get_devmap(self):
+        '''
+        Get device id -> dataset mapping (kstat uses device id).
+        Information is read from /etc/mnttab
+        '''
+    
+        devmap = dict()
+
+        f = open('/etc/mnttab', 'r')
+        content = f.read()
+        lines = content.split('\n')
+        lines.remove('')
+
+        for line in lines:
+
+            (dataset, mountpoint, fs, flagstring) = line.split('\t')[:4]
+            if fs != 'zfs':
+                continue
+
+            flags = flagstring.split(',')
+            for flag in flags:
+                keyval = flag.split('=')
+                if len(keyval) > 1 and keyval[0] == 'dev':
+                    devmap[keyval[1]] = dataset
+                    
+        return devmap
+        
+    def datasets(self):
+        oldstats = self.stats
+        self.stats = self.update()
+        deltas = deltify(oldstats, self.stats, self.devmap)
+        ordered = reversed(sorted(deltas, key = lambda ds: float(ds.nread) + float(ds.nwrite)))
+        return ordered
+
+class Column(object):
+    name = ''
+    title = ''
+    size = ''
+    
+    def __init__(self, name, title, size):
+        self.name = name
+        self.title = title
+        self.size = size
+        
+    def format(self, value):
+        if self.name == 'dataset':
+            return value
+        else:
+            return engineerify(value)
+    
+
+def engineerify(num):
+    '''
+    Format large numbers with k, M, G or T suffix.
+    '''
+    
+    num = float(num)
+    suffixes = ['', 'k', 'M', 'G', 'T']
+    i = 0
+    while num > 1024:
+        num /= 1024
+        i += 1
+    return '%.1f%s' % (num, suffixes[i])
+
+class TopUI:
+    
+    def __init__(self, columns, dataproducer):
+        self.columns = columns
+        self.dataproducer = dataproducer
+        self.timer_resolution = 0.05
+        self.sleeptime = 2.0
+        self.lastrun_epoch = time.time() - self.sleeptime
+    
+    def start(self):
+        '''
+        Initialize curses
+        '''
+        # Setting locale is required for curses + multibyte characters
+        locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')
+        #code = locale.getpreferredencoding()
+
+        # Initialize curses
+        self.window = curses.initscr()
+        self.window.nodelay(1)
+        self.window.notimeout(0)
+        curses.cbreak()
+        curses.noecho()
+        curses.curs_set(0)
+        
+    def stop(self):
+        '''
+        Uninitialize curses
+        '''
+        curses.endwin()
+        
+    def run(self):
+
+        self.start()
+        atexit.register(self.stop)
+
+        while self.handle_input():
+            
+            now = time.time()
+            overdue = now - self.lastrun_epoch - self.sleeptime
+            if overdue >= 0:
+                self.lastrun_epoch = now - overdue
+                self.dataproducer.update()
+                self.draw()
+                
+            time.sleep(self.timer_resolution)
+
+                    
+    def handle_input(self):
+
+        # Will raise an exception when no input available
+        try:
+            while True:
+                key = self.window.getkey()
+                if key == 'q':
+                    return False
+                elif key == ' ':
+                    self.lastrun_epoch = time.time() - self.sleeptime
+
+        except curses.error as e:
+            # Ignore 'no input' error
+            if e.args[0] != 'no input':
+                raise e
+            
+        return True
+            
+    def draw(self):
+        '''
+        Update screen
+        '''
+        
+        # Always have a clean slate
+        self.window.erase()
+        
+        # Some help
+        self.window.addstr(0, 0, 'zettatop ')
+        self.window.addstr(' q ', curses.A_BOLD)
+        self.window.addstr('- quit')
+        #self.window.addstr(' m ', curses.A_BOLD)
+        #self.window.addstr('- min/avg/max,')
+
+        # Draw column titles
+        xloc = 0
+        for c in self.columns:
+            self.window.addstr(1, xloc, c.title, curses.A_BOLD)
+            xloc += c.size
+
+        # Get new data
+        datasets = self.dataproducer.datasets()
+        iterator = iter(datasets)
+
+        # Draw column content
+        startrow = 2
+        rows = self.window.getmaxyx()[0]
+
+        for y in range(startrow, rows - startrow):
+            try:
+                ds = iterator.next()
+                xloc = 0
+                for c in self.columns:
+                    self.window.addstr(y, xloc, c.format(getattr(ds, c.name)))
+                    xloc += c.size
+            except StopIteration:
+                break
+            
+        # Draw screen
+        self.window.refresh()
+
+    
+
+# Main
+def main(args):
+
+    # Command line arguments etc.
+    sleeptime = 3
+    if len(args) > 0:
+        sleeptime = int(args[0])
+
+    columns = [
+               Column('nread', 'read', 12),
+               Column('nwrite', 'write', 12),
+               Column('read_bytes', 'read bytes', 12),
+               Column('write_bytes', 'write bytes', 12),
+               Column('dataset', 'dataset', 32)
+               ]
+    
+    dataproducer = DataProducer()
+    
+    # Initialize UI
+    topui = TopUI(columns, dataproducer)
+    try:
+        topui.run()
+    except Exception as e:
+        topui.stop()
+        print e    
+    
+if __name__ == '__main__':
+    main(sys.argv[1:])
+

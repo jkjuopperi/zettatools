@@ -1,0 +1,39 @@
+#!/bin/sh
+#
+# Juho Juopperi <jkj@kapsi.fi>
+#
+
+exitval=0
+output=""
+
+/usr/sbin/zpool list -H -o name,health |while read pool status ;do
+
+	output="${output} ${pool}:${status}"
+
+	if [ "ONLINE" = "$status" ]; then
+		continue
+	fi
+
+	if [ "DEGRADED" = "$status" ]; then
+		if [ "$exitval" -lt 1 ]; then
+			exitval=1
+		fi
+	else
+		if [ "$exitval" -lt 2 ]; then
+			exitval=2
+		fi
+	fi
+done
+
+if [ "0" = "$exitval" ]; then
+	output="OK${output}"
+else if [ "1" = "$exitval" ]; then
+	output="WARNING${output}"
+else
+	output="CRITICAL${output}"
+fi
+fi
+
+echo "$output"
+
+exit $exitval

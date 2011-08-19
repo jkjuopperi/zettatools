@@ -1,0 +1,50 @@
+#!/bin/bash
+#
+# Nagios Filesystem Plugin
+#
+# Description: Check the filesystem status for ZFS
+# Original Author: Suraj K Abraham
+# Modified by: Juho Juopperi <jkj@kapsi.fi>
+#
+
+# Usage
+if [ $# -lt 3 ]; then
+echo "Usage: $0 <dataset> <warning> <critical>"
+exit 2
+fi
+
+# Filesystem threshold values
+DATASET=$1
+FS_WARNING=$2
+FS_CRITICAL=$3
+
+zfs get type "$DATASET" > /dev/null 2>&1
+if [ $? -ne 0 ] ; then
+   echo "UNKNOWN : dataset $DATASET is invalid"
+   exit 3
+fi
+
+
+if (( $FS_CRITICAL <= $FS_WARNING ))
+then
+      echo "UNKNOWN : warning:$FS_WARNING critical:$FS_CRITICAL, critical value must be less than the warning value."
+      exit 3
+fi
+
+ZFS_available=`zfs get -H -p available $DATASET |awk '{print $3}'`
+ZFS_used=`zfs get -H -p used $DATASET |awk '{print $3}'`
+ZFS_size=$(( $ZFS_used + $ZFS_available ))
+ZFS_utilization=$(( $ZFS_used * 100 / $ZFS_size ))
+
+USED=`zfs list -H -o used $DATASET`
+AVAIL=`zfs list -H -o available $DATASET`
+
+
+i=$ZFS_utilization
+if [ $i -lt $2 ] ; then
+	echo "$DATASET: $i% used - (Used: $USED, Available: $AVAIL) (under $FS_WARNING%): OK" ; exit 0
+elif [ $i -ge $3 ] ; then
+	echo "$DATASET: $i% used - (Used: $USED, Available: $AVAIL) (over $FS_CRITICAL%): CRITICAL" ; exit 2
+else
+	echo "$DATASET: $i% used - (Used: $USED, Available: $AVAIL) (over $FS_WARNING%): WARNING" ; exit 1
+fi

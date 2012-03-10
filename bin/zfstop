@@ -85,7 +85,7 @@ class DataProducer(object):
         datasets = dict()
     
         env = { 'LANG': 'C' }
-        p = subprocess.Popen(['kstat', '-p', 'unix:*:vopstats_???????'], stdout=subprocess.PIPE, env=env)
+        p = subprocess.Popen(['kstat', '-p', 'unix:*:vopstats_*'], stdout=subprocess.PIPE, env=env)
         res = p.communicate()
     
         if p.returncode > 0:
@@ -137,13 +137,14 @@ class DataProducer(object):
                 if len(keyval) > 1 and keyval[0] == 'dev':
                     devmap[keyval[1]] = dataset
                     
+	devmap['zfs'] = 'TOTAL'
         return devmap
         
     def datasets(self):
         oldstats = self.stats
         self.stats = self.update()
         deltas = deltify(oldstats, self.stats, self.devmap)
-        ordered = reversed(sorted(deltas, key = lambda ds: float(ds.nread) + float(ds.nwrite)))
+        ordered = sorted(deltas, key = lambda ds: ds.dataset)
         return ordered
 
 class Column(object):
@@ -178,11 +179,11 @@ def engineerify(num):
 
 class TopUI:
     
-    def __init__(self, columns, dataproducer):
+    def __init__(self, columns, dataproducer, sleeptime):
         self.columns = columns
         self.dataproducer = dataproducer
         self.timer_resolution = 0.05
-        self.sleeptime = 2.0
+        self.sleeptime = sleeptime
         self.lastrun_epoch = time.time() - self.sleeptime
     
     def start(self):
@@ -305,7 +306,7 @@ def main(args):
     dataproducer = DataProducer()
     
     # Initialize UI
-    topui = TopUI(columns, dataproducer)
+    topui = TopUI(columns, dataproducer, sleeptime)
     try:
         topui.run()
     except Exception as e:

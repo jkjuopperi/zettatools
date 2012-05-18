@@ -1,0 +1,41 @@
+#! /bin/ksh
+# Solaris ZIL statistics
+
+#%# family=auto
+#%# capabilities=autoconf
+
+if [ "$1" = "autoconf" ]; then
+	echo yes
+	exit 0
+fi
+
+if [ "$1" = "config" ]; then
+	cat <<-EOT
+		graph_args --base 1000 -l 0 --vertical-label ops 
+		graph_title ZIL statistics
+		graph_category disk
+		graph_info ZIL operations per 5 sec.
+
+		ops_total.label Total ops
+		ops_total.info Number of synchronous iops per interval (5 sec)
+
+		ops_4kb.label Ops <= 4kB
+		ops_4kb.info Number of synchronous iops <= 4 kBytes per interval (5 sec)
+
+		ops_4_32kb.label Ops 4-32kB
+		ops_4_32kb.info Number of synchronous iops 4-32 kBytes per interval (5 sec)
+
+		ops_32kb.label Ops >= 32kB
+		ops_32kb.info Number of synchronous iops >= 32 kBytes per interval (5 sec)
+	EOT
+	exit 0
+fi
+
+/opt/zettatools/bin/zilstat -p tank 5 1 | /usr/gnu/bin/grep -A 1 "Bytes" | /usr/gnu/bin/tail -1 | nawk '
+{
+	print "ops_total.value " $7
+	print "ops_4kb.value " $8
+	print "ops_4_32kb.value " $9
+	print "ops_32kb.value " $10
+}
+'

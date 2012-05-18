@@ -1,0 +1,78 @@
+#!/bin/ksh
+LC_ALL=C
+export LC_ALL
+
+#%# family=auto
+#%# capabilities=autoconf
+
+if [ "$1" = "autoconf" ]; then
+	echo yes
+	exit 0
+fi
+
+if [ "$1" = "config" ]; then
+	cat <<-EOT
+graph_args -l 0 -u 100
+graph_title ARC/L2ARC hit/miss %
+graph_category disk
+graph_info ARC/L2ARC hit/miss %
+graph_vlabel hit%
+
+l1.label ARC hit %
+l2.label L2ARC hit %
+demand_data.label Demand data hit %
+demand_metadata.label Demand metadata hit %
+prefetch_data.label Prefetch data hit %
+prefetch_metadata.label Prefetch metadata hit %
+	EOT
+	exit 0
+fi
+
+LASTFILE="/var/tmp/arc_stat_`whoami`"
+
+current_data () {
+	/usr/bin/kstat -p zfs:0:arcstats |tee $LASTFILE
+}
+
+last_data () {
+	if [ -r $LASTFILE ]; then
+		cat $LASTFILE
+	else
+		current_data
+		sleep 5
+	fi
+}
+
+data () {
+	last_data |sed 's/^/then:/'
+	current_data |sed 's/^/now:/'
+}
+
+data | /usr/gnu/bin/awk '
+/then:/ {
+	gsub("^.*:","");
+	then[$1]=$2;
+	next;
+}
+
+/now:/ {
+	gsub("^.*:","");
+	now[$1]=$2;
+	next;
+}
+
+END {
+	for (i in now) {
+		delta[i]=now[i]-then[i];
+	}
+
+	print "demand_data.value " delta["demand_data_hits"]*100/(delta["demand_data_hits"]+delta["demand_data_misses"])
+	print "demand_metadata.value " delta["demand_metadata_hits"]*100/(delta["demand_metadata_hits"]+delta["demand_metadata_misses"])
+	print "prefetch_data.value " delta["prefetch_data_hits"]*100/(delta["prefetch_data_hits"]+delta["prefetch_data_misses"])
+	print "prefetch_metadata.value " delta["prefetch_metadata_hits"]*100/(delta["prefetch_metadata_hits"]+delta["prefetch_metadata_misses"])
+	print "l2.value " delta["l2_hits"]*100/(delta["l2_hits"]+delta["l2_misses"])
+	print "l1.value " delta["hits"]*100/(delta["hits"]+delta["misses"])
+}
+'
+
+exit 0

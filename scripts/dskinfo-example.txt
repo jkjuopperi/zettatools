@@ -1,0 +1,51 @@
+# dskinfo list-full
+disk                                   size hex   dec p   spd type  lb
+  use                      vendor           product          serial          
+c0t0d0                                 68G  -     -   -   -   disk  y 
+  rpool                    FUJITSU          MAP3735N SUN72G  -               
+c0t1d0                                 68G  -     -   -   -   disk  y 
+  rpool                    FUJITSU          MAP3735N SUN72G  -               
+c1t1d0                                 16G  -     -   -   -   disk  y 
+  storage                  SEAGATE          ST318404LSUN18G  -               
+c1t2d0                                 16G  -     -   -   -   disk  y 
+  storage                  FUJITSU          MAJ3182M SUN18G  -               
+c1t3d0                                 16G  -     -   -   -   disk  y 
+  storage                  FUJITSU          MAJ3182M SUN18G  -               
+c1t4d0                                 16G  -     -   -   -   disk  y 
+  storage                  FUJITSU          MAG3182L SUN18G  -               
+c1t5d0                                 16G  -     -   -   -   disk  y 
+  storage                  FUJITSU          MAJ3182M SUN18G  -               
+c1t6d0                                 16G  -     -   -   -   disk  y 
+  storage                  FUJITSU          MAJ3182M SUN18G  -               
+
+# dskinfo list-long
+disk                                   size lun   use           p   spd type  lb
+c1t0d0                                 136G -     rpool         -   -   disk  y
+c1t1d0                                 136G -     rpool         -   -   disk  y
+c6t60000879170292610822533095343732d0  100G 0x1   zpool03       4   4Gb fc    y
+c6t60000879170292610822533095343734d0  100G 0x3   zpool03       4   4Gb fc    y
+c6t60000879170292610822533095343736d0  404G 0x5   zpool03       4   4Gb fc    y
+c6t60000879170292610822533095343745d0  5T   0xb   zpool03       4   4Gb fc    y
+
+$ dskinfo list
+disk                                   size use                      type 
+c0t0d0                                 68G  rpool                    disk 
+c0t1d0                                 68G  rpool                    disk 
+c1t1d0                                 16G  storage                  disk 
+c1t2d0                                 16G  storage                  disk 
+c1t3d0                                 16G  storage                  disk 
+c1t4d0                                 16G  storage                  disk 
+c1t5d0                                 16G  storage                  disk 
+c1t6d0                                 16G  storage                  disk 
+
+$ dskinfo list-full
+disk                                   size hex   dec p   spd type  lb
+  use                      vendor           product          serial          
+c0t60060870003290101039544030433445d0  33G  0x5   5   2   4Gb fc    y 
+  zpool01                  EMC              SYMMETRIX        2112C0B00000    
+c0t60060870003290101039544030433430d0  33G  0x7   7   2   4Gb fc    y 
+  zpool01                  EMC              SYMMETRIX        211217D10000    
+c0t60060870003290101939544030433432d0  33G  0x8   8   2   4Gb fc    y 
+  zpool01                  EMC              SYMMETRIX        211217D12000    
+c0t60060870003290101939544030433434d0  33G  0x9   9   2   4Gb fc    y 
+  zpool01                  EMC              SYMMETRIX        211217D14000    

@@ -1,0 +1,50 @@
+#!/usr/bin/env python
+# Munin plugin for watching NFS4 statistics
+#%# family=auto
+#%# capabilities=autoconf
+
+import sys
+import subprocess
+
+names = [
+        'Client_id_space',
+        'ClntIP_id_space',
+        'OpenOwner_id_space',
+        'OpenStateID_id_space',
+        'LockStateID_id_space',
+        'Lockowner_id_space',
+        'DelegStateID_id_space'
+]
+
+if len(sys.argv) == 2 and sys.argv[1] == "autoconf":
+        print "yes"
+
+elif len(sys.argv) == 2 and sys.argv[1] == "config":
+        print 'graph_title NFS4 object stats'
+        print 'graph_vlabel count'
+        print 'graph_category nfs'
+        print 'graph_args --base 1000'
+
+        for name in names:
+                print '%s.label %s' % (name.lower(), name)
+                print '%s.type GAUGE' % name.lower()
+
+else:
+        p = subprocess.Popen(['kstat', '-p', 'vmem:*:*:mem_inuse'],
+stdout=subprocess.PIPE)
+        res = p.communicate()
+
+        if p.returncode > 0:
+                print 'Could not call kstat'
+                sys.exit(1)
+
+        used = dict()
+        lines = res[0].split('\n')
+        lines.remove('')
+        for line in lines:
+                (path, value) = line.split('\t')
+                (module, instance, name, stat) = path.split(':')
+                used[name] = int(value)
+
+        for name in names:
+                print '%s.value %d' % (name.lower(), used[name])

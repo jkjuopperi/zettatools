@@ -1,0 +1,35 @@
+#! /bin/ksh
+# Solaris IO write random/sequential percentages
+
+#%# family=auto
+#%# capabilities=autoconf
+
+if [ "$1" = "autoconf" ]; then
+	echo yes
+	exit 0
+fi
+
+if [ "$1" = "config" ]; then
+	cat <<-EOT
+		graph_args --base 1000 -l 0 -u 100 --rigid --vertical-label % 
+		graph_title I/O write random/sequential percentage 
+		graph_category disk
+		graph_info I/O write random/sequential percentage
+
+		random.label Random write %
+		random.draw AREA
+		random.info Percentage of random writes
+
+		sequential.label Sequential write %
+		sequential.draw STACK
+		sequential.info Percentage of sequential writes
+	EOT
+	exit 0
+fi
+
+/opt/zettatools/bin/iopattern -w 5 1 | /usr/gnu/bin/grep -A 1 "RAN" | /usr/gnu/bin/tail -1 | nawk '
+{
+	print "random.value " $1
+	print "sequential.value " $2
+}
+'

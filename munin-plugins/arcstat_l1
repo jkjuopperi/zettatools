@@ -1,0 +1,74 @@
+#!/bin/ksh
+LC_ALL=C
+export LC_ALL
+
+#%# family=auto
+#%# capabilities=autoconf
+
+if [ "$1" = "autoconf" ]; then
+	echo yes
+	exit 0
+fi
+
+if [ "$1" = "config" ]; then
+	cat <<-EOT
+graph_args --base 1000 -l 0 -u 100 --rigid --vertical-label % 
+graph_title L1 ARC hit/miss percentage 
+graph_category disk
+graph_info ARC read hit/miss percentage
+
+hit.label ARC hit %
+hit.draw AREA
+hit.info Percentage of ARC cache hits
+
+miss.label ARC miss %
+miss.draw STACK
+miss.info Percentage of ARC cache miss
+	EOT
+	exit 0
+fi
+
+LASTFILE="/var/tmp/arc_stat_l1_`whoami`"
+
+current_data () {
+	/usr/bin/kstat -p zfs:0:arcstats |tee $LASTFILE
+}
+
+last_data () {
+	if [ -r $LASTFILE ]; then
+		cat $LASTFILE
+	else
+		current_data
+		sleep 5
+	fi
+}
+
+data () {
+	last_data |sed 's/^/then:/'
+	current_data |sed 's/^/now:/'
+}
+
+data | /usr/gnu/bin/awk '
+/then:/ {
+	gsub("^.*:","");
+	then[$1]=$2;
+	next;
+}
+
+/now:/ {
+	gsub("^.*:","");
+	now[$1]=$2;
+	next;
+}
+
+END {
+	for (i in now) {
+		delta[i]=now[i]-then[i];
+	}
+
+	print "hit.value " delta["hits"]*100/(delta["hits"]+delta["misses"])
+	print "miss.value " delta["misses"]*100/(delta["hits"]+delta["misses"])
+}
+'
+
+exit 0

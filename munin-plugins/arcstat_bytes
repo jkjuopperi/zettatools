@@ -1,0 +1,53 @@
+#! /bin/ksh
+
+#%# family=auto
+#%# capabilities=autoconf
+
+if [ "$1" = "autoconf" ]; then
+	echo yes
+	exit 0
+fi
+
+if [ "$1" = "config" ]; then
+	cat <<-EOT
+graph_args --base 1000 -l 0 --vertical-label reads
+graph_title ARC/L2ARC hits/misses
+graph_category disk
+graph_info ARC/L2ARC hits/misses
+
+hit.label ARC hits
+hit.draw AREA
+hit.type DERIVE
+hit.max 10000000
+
+l2hit.label L2ARC hits
+l2hit.draw STACK
+l2hit.type DERIVE
+l2hit.max 10000000
+
+miss.label ARC/L2ARC misses
+miss.draw STACK
+miss.type DERIVE
+miss.max 10000000
+	EOT
+	exit 0
+fi
+
+current_data () {        /usr/bin/kstat -p zfs:0:arcstats
+}
+
+
+current_data | /usr/gnu/bin/awk '
+{
+        gsub("^.*:","");
+        now[$1]=$2;
+        next;
+}
+
+END {
+        print "hit.value " now["hits"]
+        print "l2hit.value " now["l2_hits"]
+        print "miss.value " now["l2_misses"]
+}
+'
+
